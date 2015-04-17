@@ -98,9 +98,9 @@ RUN cd /usr/local/go/src \
 			./make.bash --no-clean 2>&1; \
 	done
 
-# We still support compiling with older Go, so need to grab older "gofmt"
-ENV GOFMT_VERSION 1.3.3
-RUN curl -sSL https://storage.googleapis.com/golang/go${GOFMT_VERSION}.$(go env GOOS)-$(go env GOARCH).tar.gz | tar -C /go/bin -xz --strip-components=2 go/bin/gofmt
+# This has been commented out and kept as reference because we don't support compiling with older Go anymore.
+# ENV GOFMT_VERSION 1.3.3
+# RUN curl -sSL https://storage.googleapis.com/golang/go${GOFMT_VERSION}.$(go env GOOS)-$(go env GOARCH).tar.gz | tar -C /go/bin -xz --strip-components=2 go/bin/gofmt
 
 # Update this sha when we upgrade to go 1.5.0
 ENV GO_TOOLS_COMMIT 069d2f3bcb68257b627205f0486d6cc69a231ff9
@@ -160,20 +160,21 @@ RUN ./contrib/download-frozen-image.sh /docker-frozen-images \
 	hello-world:frozen@e45a5af57b00862e5ef5782a9925979a02ba2b12dff832fd0991335f4a11e5c5
 # see also "hack/make/.ensure-frozen-images" (which needs to be updated any time this list is)
 
-# Install man page generator
-COPY vendor /go/src/github.com/docker/docker/vendor
-# (copy vendor/ because go-md2man needs golang.org/x/net)
+# Download man page generator
 RUN set -x \
 	&& git clone -b v1.0.1 https://github.com/cpuguy83/go-md2man.git /go/src/github.com/cpuguy83/go-md2man \
-	&& git clone -b v1.2 https://github.com/russross/blackfriday.git /go/src/github.com/russross/blackfriday \
-	&& go install -v github.com/cpuguy83/go-md2man
+	&& git clone -b v1.2 https://github.com/russross/blackfriday.git /go/src/github.com/russross/blackfriday
 
-# install toml validator
+# Download toml validator
 ENV TOMLV_COMMIT 9baf8a8a9f2ed20a8e54160840c492f937eeaf9a
 RUN set -x \
 	&& git clone https://github.com/BurntSushi/toml.git /go/src/github.com/BurntSushi/toml \
-	&& (cd /go/src/github.com/BurntSushi/toml && git checkout -q $TOMLV_COMMIT) \
-	&& go install -v github.com/BurntSushi/toml/cmd/tomlv
+	&& (cd /go/src/github.com/BurntSushi/toml && git checkout -q $TOMLV_COMMIT)
+
+# copy vendor/ because go-md2man needs golang.org/x/net
+COPY vendor /go/src/github.com/docker/docker/vendor
+RUN go install -v github.com/cpuguy83/go-md2man \
+	github.com/BurntSushi/toml/cmd/tomlv
 
 # Wrap all commands in the "docker-in-docker" script to allow nested containers
 ENTRYPOINT ["hack/dind"]

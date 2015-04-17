@@ -21,11 +21,11 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/docker/daemon/logger"
+	"github.com/docker/docker/daemon/logger/journald"
 	"github.com/docker/docker/daemon/logger/jsonfilelog"
 	"github.com/docker/docker/daemon/logger/syslog"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/daemon/networkdriver/bridge"
-	"github.com/docker/docker/engine"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/links"
 	"github.com/docker/docker/nat"
@@ -148,8 +148,7 @@ func (container *Container) toDisk() error {
 		return err
 	}
 
-	err = ioutil.WriteFile(pth, data, 0666)
-	if err != nil {
+	if err := ioutil.WriteFile(pth, data, 0666); err != nil {
 		return err
 	}
 
@@ -178,11 +177,13 @@ func (container *Container) readHostConfig() error {
 		return nil
 	}
 
-	data, err := ioutil.ReadFile(pth)
+	f, err := os.Open(pth)
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(data, container.hostConfig)
+	defer f.Close()
+
+	return json.NewDecoder(f).Decode(&container.hostConfig)
 }
 
 func (container *Container) WriteHostConfig() error {
@@ -208,12 +209,37 @@ func (container *Container) LogEvent(action string) {
 	)
 }
 
-func (container *Container) getResourcePath(path string) (string, error) {
+// Evaluates `path` in the scope of the container's basefs, with proper path
+// sanitisation. Symlinks are all scoped to the basefs of the container, as
+// though the container's basefs was `/`.
+//
+// The basefs of a container is the host-facing path which is bind-mounted as
+// `/` inside the container. This method is essentially used to access a
+// particular path inside the container as though you were a process in that
+// container.
+//
+// NOTE: The returned path is *only* safely scoped inside the container's basefs
+//       if no component of the returned path changes (such as a component
+//       symlinking to a different path) between using this method and using the
+//       path. See symlink.FollowSymlinkInScope for more details.
+func (container *Container) GetResourcePath(path string) (string, error) {
 	cleanPath := filepath.Join("/", path)
 	return symlink.FollowSymlinkInScope(filepath.Join(container.basefs, cleanPath), container.basefs)
 }
 
-func (container *Container) getRootResourcePath(path string) (string, error) {
+// Evaluates `path` in the scope of the container's root, with proper path
+// sanitisation. Symlinks are all scoped to the root of the container, as
+// though the container's root was `/`.
+//
+// The root of a container is the host-facing configuration metadata directory.
+// Only use this method to safely access the container's `container.json` or
+// other metadata files. If in doubt, use container.GetResourcePath.
+//
+// NOTE: The returned path is *only* safely scoped inside the container's root
+//       if no component of the returned path changes (such as a component
+//       symlinking to a different path) between using this method and using the
+//       path. See symlink.FollowSymlinkInScope for more details.
+func (container *Container) GetRootResourcePath(path string) (string, error) {
 	cleanPath := filepath.Join("/", path)
 	return symlink.FollowSymlinkInScope(filepath.Join(container.root, cleanPath), container.root)
 }
@@ -351,12 +377,14 @@ func populateCommand(c *Container, env []string) error {
 	}
 
 	resources := &execdriver.Resources{
-		Memory:     c.hostConfig.Memory,
-		MemorySwap: c.hostConfig.MemorySwap,
-		CpuShares:  c.hostConfig.CpuShares,
-		CpusetCpus: c.hostConfig.CpusetCpus,
-		CpusetMems: c.hostConfig.CpusetMems,
-		Rlimits:    rlimits,
+		Memory:         c.hostConfig.Memory,
+		MemorySwap:     c.hostConfig.MemorySwap,
+		CpuShares:      c.hostConfig.CpuShares,
+		CpusetCpus:     c.hostConfig.CpusetCpus,
+		CpusetMems:     c.hostConfig.CpusetMems,
+		CpuQuota:       c.hostConfig.CpuQuota,
+		Rlimits:        rlimits,
+		OomKillDisable: c.hostConfig.OomKillDisable,
 	}
 
 	processConfig := execdriver.ProcessConfig{
@@ -511,7 +539,7 @@ func (streamConfig *StreamConfig) StderrLogPipe() io.ReadCloser {
 }
 
 func (container *Container) buildHostnameFile() error {
-	hostnamePath, err := container.getRootResourcePath("hostname")
+	hostnamePath, err := container.GetRootResourcePath("hostname")
 	if err != nil {
 		return err
 	}
@@ -525,7 +553,7 @@ func (container *Container) buildHostnameFile() error {
 
 func (container *Container) buildHostsFiles(IP string) error {
 
-	hostsPath, err := container.getRootResourcePath("hosts")
+	hostsPath, err := container.GetRootResourcePath("hosts")
 	if err != nil {
 		return err
 	}
@@ -572,10 +600,7 @@ func (container *Container) AllocateNetwork() error {
 		return nil
 	}
 
-	var (
-		err error
-		eng = container.daemon.eng
-	)
+	var err error
 
 	networkSettings, err := bridge.Allocate(container.ID, container.Config.MacAddress, "", "")
 	if err != nil {
@@ -622,7 +647,7 @@ func (container *Container) AllocateNetwork() error {
 	container.NetworkSettings.PortMapping = nil
 
 	for port := range portSpecs {
-		if err = container.allocatePort(eng, port, bindings); err != nil {
+		if err = container.allocatePort(port, bindings); err != nil {
 			bridge.Release(container.ID)
 			return err
 		}
@@ -658,8 +683,6 @@ func (container *Container) RestoreNetwork() error {
 		return nil
 	}
 
-	eng := container.daemon.eng
-
 	// Re-allocate the interface with the same IP and MAC address.
 	if _, err := bridge.Allocate(container.ID, container.NetworkSettings.MacAddress, container.NetworkSettings.IPAddress, ""); err != nil {
 		return err
@@ -667,7 +690,7 @@ func (container *Container) RestoreNetwork() error {
 
 	// Re-allocate any previously allocated ports.
 	for port := range container.NetworkSettings.Ports {
-		if err := container.allocatePort(eng, port, container.NetworkSettings.Ports); err != nil {
+		if err := container.allocatePort(port, container.NetworkSettings.Ports); err != nil {
 			return err
 		}
 	}
@@ -891,7 +914,7 @@ func (container *Container) Unmount() error {
 }
 
 func (container *Container) logPath(name string) (string, error) {
-	return container.getRootResourcePath(fmt.Sprintf("%s-%s.log", container.ID, name))
+	return container.GetRootResourcePath(fmt.Sprintf("%s-%s.log", container.ID, name))
 }
 
 func (container *Container) ReadLog(name string) (io.Reader, error) {
@@ -903,11 +926,11 @@ func (container *Container) ReadLog(name string) (io.Reader, error) {
 }
 
 func (container *Container) hostConfigPath() (string, error) {
-	return container.getRootResourcePath("hostconfig.json")
+	return container.GetRootResourcePath("hostconfig.json")
 }
 
 func (container *Container) jsonPath() (string, error) {
-	return container.getRootResourcePath("config.json")
+	return container.GetRootResourcePath("config.json")
 }
 
 // This method must be exported to be used from the lxc template
@@ -955,37 +978,35 @@ func (container *Container) GetSize() (int64, int64) {
 }
 
 func (container *Container) Copy(resource string) (io.ReadCloser, error) {
+	container.Lock()
+	defer container.Unlock()
+	var err error
 	if err := container.Mount(); err != nil {
 		return nil, err
 	}
+	defer func() {
+		if err != nil {
+			container.Unmount()
+		}
+	}()
 
-	basePath, err := container.getResourcePath(resource)
-	if err != nil {
-		container.Unmount()
+	if err = container.mountVolumes(); err != nil {
+		container.unmountVolumes()
 		return nil, err
 	}
-
-	// Check if this is actually in a volume
-	for _, mnt := range container.VolumeMounts() {
-		if len(mnt.MountToPath) > 0 && strings.HasPrefix(resource, mnt.MountToPath[1:]) {
-			return mnt.Export(resource)
+	defer func() {
+		if err != nil {
+			container.unmountVolumes()
 		}
-	}
+	}()
 
-	// Check if this is a special one (resolv.conf, hostname, ..)
-	if resource == "etc/resolv.conf" {
-		basePath = container.ResolvConfPath
-	}
-	if resource == "etc/hostname" {
-		basePath = container.HostnamePath
-	}
-	if resource == "etc/hosts" {
-		basePath = container.HostsPath
+	basePath, err := container.GetResourcePath(resource)
+	if err != nil {
+		return nil, err
 	}
 
 	stat, err := os.Stat(basePath)
 	if err != nil {
-		container.Unmount()
 		return nil, err
 	}
 	var filter []string
@@ -1003,11 +1024,12 @@ func (container *Container) Copy(resource string) (io.ReadCloser, error) {
 		IncludeFiles: filter,
 	})
 	if err != nil {
-		container.Unmount()
 		return nil, err
 	}
+
 	return ioutils.NewReadCloserWrapper(archive, func() error {
 			err := archive.Close()
+			container.unmountVolumes()
 			container.Unmount()
 			return err
 		}),
@@ -1080,7 +1102,7 @@ func (container *Container) setupContainerDns() error {
 	if err != nil {
 		return err
 	}
-	container.ResolvConfPath, err = container.getRootResourcePath("resolv.conf")
+	container.ResolvConfPath, err = container.GetRootResourcePath("resolv.conf")
 	if err != nil {
 		return err
 	}
@@ -1241,7 +1263,7 @@ func (container *Container) initializeNetworking() error {
 			return err
 		}
 
-		hostsPath, err := container.getRootResourcePath("hosts")
+		hostsPath, err := container.GetRootResourcePath("hosts")
 		if err != nil {
 			return err
 		}
@@ -1372,7 +1394,7 @@ func (container *Container) setupWorkingDirectory() error {
 	if container.Config.WorkingDir != "" {
 		container.Config.WorkingDir = path.Clean(container.Config.WorkingDir)
 
-		pth, err := container.getResourcePath(container.Config.WorkingDir)
+		pth, err := container.GetResourcePath(container.Config.WorkingDir)
 		if err != nil {
 			return err
 		}
@@ -1419,6 +1441,12 @@ func (container *Container) startLogging() error {
 			return err
 		}
 		l = dl
+	case "journald":
+		dl, err := journald.New(container.ID[:12])
+		if err != nil {
+			return err
+		}
+		l = dl
 	case "none":
 		return nil
 	default:
@@ -1450,7 +1478,7 @@ func (container *Container) waitForStart() error {
 	return nil
 }
 
-func (container *Container) allocatePort(eng *engine.Engine, port nat.Port, bindings nat.PortMap) error {
+func (container *Container) allocatePort(port nat.Port, bindings nat.PortMap) error {
 	binding := bindings[port]
 	if container.hostConfig.PublishAllPorts && len(binding) == 0 {
 		binding = append(binding, nat.PortBinding{})
@@ -1505,6 +1533,9 @@ func (container *Container) getNetworkedContainer() (*Container, error) {
 		nc, err := container.daemon.Get(parts[1])
 		if err != nil {
 			return nil, err
+		}
+		if container == nc {
+			return nil, fmt.Errorf("cannot join own network")
 		}
 		if !nc.IsRunning() {
 			return nil, fmt.Errorf("cannot join network of a non running container: %s", parts[1])

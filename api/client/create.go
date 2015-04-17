@@ -37,11 +37,8 @@ func (cli *DockerCli) pullImageCustomOut(image string, out io.Writer) error {
 		return err
 	}
 
-	// Load the auth config file, to be able to pull the image
-	cli.LoadConfigFile()
-
 	// Resolve the Auth config relevant for this server
-	authConfig := cli.configFile.ResolveAuthConfig(repoInfo.Index)
+	authConfig := registry.ResolveAuthConfig(cli.configFile, repoInfo.Index)
 	buf, err := json.Marshal(authConfig)
 	if err != nil {
 		return err
@@ -50,7 +47,12 @@ func (cli *DockerCli) pullImageCustomOut(image string, out io.Writer) error {
 	registryAuthHeader := []string{
 		base64.URLEncoding.EncodeToString(buf),
 	}
-	if err = cli.stream("POST", "/images/create?"+v.Encode(), nil, out, map[string][]string{"X-Registry-Auth": registryAuthHeader}); err != nil {
+	sopts := &streamOpts{
+		rawTerminal: true,
+		out:         out,
+		headers:     map[string][]string{"X-Registry-Auth": registryAuthHeader},
+	}
+	if err := cli.stream("POST", "/images/create?"+v.Encode(), sopts); err != nil {
 		return err
 	}
 	return nil

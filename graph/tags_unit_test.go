@@ -1,6 +1,7 @@
 package graph
 
 import (
+	"archive/tar"
 	"bytes"
 	"io"
 	"os"
@@ -12,7 +13,6 @@ import (
 	_ "github.com/docker/docker/daemon/graphdriver/vfs" // import the vfs driver so it is used in the tests
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/utils"
-	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
 
 const (
@@ -60,7 +60,11 @@ func mkTestTagStore(root string, t *testing.T) *TagStore {
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, err := NewTagStore(path.Join(root, "tags"), graph, nil, nil, events.New())
+	tagCfg := &TagStoreConfig{
+		Graph:  graph,
+		Events: events.New(),
+	}
+	store, err := NewTagStore(path.Join(root, "tags"), tagCfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +76,7 @@ func mkTestTagStore(root string, t *testing.T) *TagStore {
 	if err := graph.Register(img, officialArchive); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Set(testOfficialImageName, "", testOfficialImageID, false); err != nil {
+	if err := store.Tag(testOfficialImageName, "", testOfficialImageID, false); err != nil {
 		t.Fatal(err)
 	}
 	privateArchive, err := fakeTar()
@@ -83,7 +87,7 @@ func mkTestTagStore(root string, t *testing.T) *TagStore {
 	if err := graph.Register(img, privateArchive); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.Set(testPrivateImageName, "", testPrivateImageID, false); err != nil {
+	if err := store.Tag(testPrivateImageName, "", testPrivateImageID, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetDigest(testPrivateImageName, testPrivateImageDigest, testPrivateImageID); err != nil {

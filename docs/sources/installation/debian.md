@@ -11,14 +11,15 @@ Docker is supported on the following versions of Debian:
 
 ## Debian Jessie 8.0 (64-bit)
 
-Debian 8 comes with a 3.14.0 Linux kernel, and a `docker.io` package which
-installs all its prerequisites from Debian's repository.
+Debian 8 comes with a 3.16.0 Linux kernel, the `docker.io` package can be found in the `jessie-backports` repository. Reasoning behind this can be found <a href="https://lists.debian.org/debian-release/2015/03/msg00685.html" target="_blank">here</a>. Instructions how to enable the backports repository can be found <a href="http://backports.debian.org/Instructions/" target="_blank">here</a>.
 
 > **Note**:
 > Debian contains a much older KDE3/GNOME2 package called ``docker``, so the
 > package and the executable are called ``docker.io``.
 
 ### Installation
+
+Make sure you enabled the `jessie-backports` repository, as stated above.
 
 To install the latest Debian package (may not be the latest Docker release):
 
@@ -27,13 +28,32 @@ To install the latest Debian package (may not be the latest Docker release):
 
 To verify that everything has worked as expected:
 
-    $ sudo docker run -i -t ubuntu /bin/bash
+    $ sudo docker run --rm hello-world
 
-Which should download the `ubuntu` image, and then start `bash` in a container.
+This command downloads and runs the `hello-world` image in a container. When the
+container runs, it prints an informational message. Then, it exits.
 
 > **Note**:
 > If you want to enable memory and swap accounting see
 > [this](/installation/ubuntulinux/#memory-and-swap-accounting).
+
+### Uninstallation
+
+To uninstall the Docker package:
+
+    $ sudo apt-get purge docker-io
+
+To uninstall the Docker package and dependencies that are no longer needed:
+
+    $ sudo apt-get autoremove --purge docker-io
+
+The above commands will not remove images, containers, volumes, or user created
+configuration files on your host. If you wish to delete all images, containers,
+and volumes run the following command:
+
+    $ rm -rf /var/lib/docker
+
+You must delete the user created configuration files manually.
 
 ## Debian Wheezy/Stable 7.x (64-bit)
 
@@ -71,6 +91,24 @@ which is officially supported by Docker.
 >add the key directly using the following:
 >
 >       $ wget -qO- https://get.docker.com/gpg | sudo apt-key add -
+
+### Uninstallation
+
+To uninstall the Docker package:
+
+    $ sudo apt-get purge lxc-docker
+
+To uninstall the Docker package and dependencies that are no longer needed:
+
+    $ sudo apt-get autoremove --purge lxc-docker
+
+The above commands will not remove images, containers, volumes, or user created
+configuration files on your host. If you wish to delete all images, containers,
+and volumes run the following command:
+
+    $ rm -rf /var/lib/docker
+
+You must delete the user created configuration files manually.
 
 ## Giving non-root access
 

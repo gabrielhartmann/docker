@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/registry"
 )
 
+// ByStars sorts search results in ascending order by number of stars.
 type ByStars []registry.SearchResult
 
 func (r ByStars) Len() int           { return len(r) }
@@ -44,16 +45,13 @@ func (cli *DockerCli) CmdSearch(args ...string) error {
 		return err
 	}
 
-	cli.LoadConfigFile()
-
 	rdr, _, err := cli.clientRequestAttemptLogin("GET", "/images/search?"+v.Encode(), nil, nil, repoInfo.Index, "search")
 	if err != nil {
 		return err
 	}
 
 	results := ByStars{}
-	err = json.NewDecoder(rdr).Decode(&results)
-	if err != nil {
+	if err := json.NewDecoder(rdr).Decode(&results); err != nil {
 		return err
 	}
 

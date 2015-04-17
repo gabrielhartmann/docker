@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -17,7 +18,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/pkg/stringutils"
-	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
 
 func getExitCode(err error) (int, error) {
@@ -143,6 +143,7 @@ func runCommandPipelineWithOutput(cmds ...*exec.Cmd) (output string, exitCode in
 		if i > 0 {
 			prevCmd := cmds[i-1]
 			cmd.Stdin, err = prevCmd.StdoutPipe()
+
 			if err != nil {
 				return "", 0, fmt.Errorf("cannot set stdout pipe for %s: %v", cmd.Path, err)
 			}
@@ -167,13 +168,8 @@ func runCommandPipelineWithOutput(cmds ...*exec.Cmd) (output string, exitCode in
 	return runCommandWithOutput(cmds[len(cmds)-1])
 }
 
-func logDone(message string) {
-	fmt.Printf("[PASSED]: %.69s\n", message)
-}
-
 func unmarshalJSON(data []byte, result interface{}) error {
-	err := json.Unmarshal(data, result)
-	if err != nil {
+	if err := json.Unmarshal(data, result); err != nil {
 		return err
 	}
 

@@ -218,7 +218,7 @@ func (devices *DeviceSet) ensureImage(name string, size int64) (string, error) {
 		}
 		defer file.Close()
 
-		if err = file.Truncate(size); err != nil {
+		if err := file.Truncate(size); err != nil {
 			return "", err
 		}
 	}
@@ -697,7 +697,7 @@ func (devices *DeviceSet) setupBaseImage() error {
 
 	logrus.Debugf("Creating filesystem on base device-mapper thin volume")
 
-	if err = devices.activateDeviceIfNeeded(info); err != nil {
+	if err := devices.activateDeviceIfNeeded(info); err != nil {
 		return err
 	}
 
@@ -706,7 +706,7 @@ func (devices *DeviceSet) setupBaseImage() error {
 	}
 
 	info.Initialized = true
-	if err = devices.saveMetadata(info); err != nil {
+	if err := devices.saveMetadata(info); err != nil {
 		info.Initialized = false
 		return err
 	}
@@ -1099,14 +1099,14 @@ func (devices *DeviceSet) initDevmapper(doInit bool) error {
 	// If we didn't just create the data or metadata image, we need to
 	// load the transaction id and migrate old metadata
 	if !createdLoopback {
-		if err = devices.initMetaData(); err != nil {
+		if err := devices.initMetaData(); err != nil {
 			return err
 		}
 	}
 
 	// Right now this loads only NextDeviceId. If there is more metadata
 	// down the line, we might have to move it earlier.
-	if err = devices.loadDeviceSetMetaData(); err != nil {
+	if err := devices.loadDeviceSetMetaData(); err != nil {
 		return err
 	}
 
@@ -1366,11 +1366,7 @@ func (devices *DeviceSet) MountDevice(hash, path, mountLabel string) error {
 	options = joinMountOptions(options, devices.mountOptions)
 	options = joinMountOptions(options, label.FormatMountLabel("", mountLabel))
 
-	err = syscall.Mount(info.DevName(), path, fstype, flags, joinMountOptions("discard", options))
-	if err != nil && err == syscall.EINVAL {
-		err = syscall.Mount(info.DevName(), path, fstype, flags, options)
-	}
-	if err != nil {
+	if err := syscall.Mount(info.DevName(), path, fstype, flags, options); err != nil {
 		return fmt.Errorf("Error mounting '%s' on '%s': %s", info.DevName(), path, err)
 	}
 
@@ -1528,8 +1524,7 @@ func (devices *DeviceSet) MetadataDevicePath() string {
 
 func (devices *DeviceSet) getUnderlyingAvailableSpace(loopFile string) (uint64, error) {
 	buf := new(syscall.Statfs_t)
-	err := syscall.Statfs(loopFile, buf)
-	if err != nil {
+	if err := syscall.Statfs(loopFile, buf); err != nil {
 		logrus.Warnf("Couldn't stat loopfile filesystem %v: %v", loopFile, err)
 		return 0, err
 	}

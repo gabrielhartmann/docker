@@ -9,7 +9,7 @@ import (
 	"os/signal"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/docker/docker/pkg/term/windows"
+	"github.com/docker/docker/pkg/term/ansiterm/winterm"
 )
 
 // State holds the console mode for the terminal.
@@ -32,26 +32,26 @@ func StdStreams() (stdIn io.ReadCloser, stdOut, stdErr io.Writer) {
 		return os.Stdin, os.Stdout, os.Stderr
 	case os.Getenv("MSYSTEM") != "":
 		// MSYS (mingw) does not emulate ANSI well.
-		return windows.ConsoleStreams()
+		return winterm.ConsoleStreams()
 	default:
-		return windows.ConsoleStreams()
+		return winterm.ConsoleStreams()
 	}
 }
 
 // GetFdInfo returns file descriptor and bool indicating whether the file is a terminal.
 func GetFdInfo(in interface{}) (uintptr, bool) {
-	return windows.GetHandleInfo(in)
+	return winterm.GetHandleInfo(in)
 }
 
 // GetWinsize retrieves the window size of the terminal connected to the passed file descriptor.
 func GetWinsize(fd uintptr) (*Winsize, error) {
 
-	info, err := windows.GetConsoleScreenBufferInfo(fd)
+	info, err := winterm.GetConsoleScreenBufferInfo(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	font, err := windows.GetCurrentConsoleFont(fd)
+	font, err := winterm.GetCurrentConsoleFont(fd)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +65,6 @@ func GetWinsize(fd uintptr) (*Winsize, error) {
 	// Note: GetWinsize is called frequently -- uncomment only for excessive details
 	// logrus.Debugf("[windows] GetWinsize: Console(%v)", info.String())
 	// logrus.Debugf("[windows] GetWinsize: Width(%v), Height(%v), x(%v), y(%v)", winsize.Width, winsize.Height, winsize.x, winsize.y)
-
 	return winsize, nil
 }
 
@@ -73,7 +72,7 @@ func GetWinsize(fd uintptr) (*Winsize, error) {
 func SetWinsize(fd uintptr, ws *Winsize) error {
 
 	// Ensure the requested dimensions are no larger than the maximum window size
-	info, err := windows.GetConsoleScreenBufferInfo(fd)
+	info, err := winterm.GetConsoleScreenBufferInfo(fd)
 	if err != nil {
 		return err
 	}
@@ -84,8 +83,8 @@ func SetWinsize(fd uintptr, ws *Winsize) error {
 	}
 
 	// Narrow the sizes to that used by Windows
-	var width windows.SHORT = windows.SHORT(ws.Width)
-	var height windows.SHORT = windows.SHORT(ws.Height)
+	var width winterm.SHORT = winterm.SHORT(ws.Width)
+	var height winterm.SHORT = winterm.SHORT(ws.Height)
 
 	// Set the dimensions while ensuring they remain within the bounds of the backing console buffer
 	// -- Shrinking will always succeed. Growing may push the edges past the buffer boundary. When that occurs,
@@ -112,23 +111,23 @@ func SetWinsize(fd uintptr, ws *Winsize) error {
 	}
 	logrus.Debugf("[windows] SetWinsize: Requested((%v,%v)) Actual(%v)", ws.Width, ws.Height, rect)
 
-	return windows.SetConsoleWindowInfo(fd, true, rect)
+	return winterm.SetConsoleWindowInfo(fd, true, rect)
 }
 
 // IsTerminal returns true if the given file descriptor is a terminal.
 func IsTerminal(fd uintptr) bool {
-	return windows.IsConsole(fd)
+	return winterm.IsConsole(fd)
 }
 
 // RestoreTerminal restores the terminal connected to the given file descriptor to a
 // previous state.
 func RestoreTerminal(fd uintptr, state *State) error {
-	return windows.SetConsoleMode(fd, state.mode)
+	return winterm.SetConsoleMode(fd, state.mode)
 }
 
 // SaveState saves the state of the terminal connected to the given file descriptor.
 func SaveState(fd uintptr) (*State, error) {
-	mode, e := windows.GetConsoleMode(fd)
+	mode, e := winterm.GetConsoleMode(fd)
 	if e != nil {
 		return nil, e
 	}
@@ -136,13 +135,13 @@ func SaveState(fd uintptr) (*State, error) {
 }
 
 // DisableEcho disables echo for the terminal connected to the given file descriptor.
-// -- See http://msdn.microsoft.com/en-us/library/windows/desktop/ms683462(v=vs.85).aspx
+// -- See https://msdn.microsoft.com/en-us/library/windows/desktop/ms683462(v=vs.85).aspx
 func DisableEcho(fd uintptr, state *State) error {
 	mode := state.mode
-	mode &^= windows.ENABLE_ECHO_INPUT
-	mode |= windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_LINE_INPUT
+	mode &^= winterm.ENABLE_ECHO_INPUT
+	mode |= winterm.ENABLE_PROCESSED_INPUT | winterm.ENABLE_LINE_INPUT
 
-	err := windows.SetConsoleMode(fd, mode)
+	err := winterm.SetConsoleMode(fd, mode)
 	if err != nil {
 		return err
 	}
@@ -180,18 +179,18 @@ func MakeRaw(fd uintptr) (*State, error) {
 	mode := state.mode
 
 	// Disable these modes
-	mode &^= windows.ENABLE_ECHO_INPUT
-	mode &^= windows.ENABLE_LINE_INPUT
-	mode &^= windows.ENABLE_MOUSE_INPUT
-	mode &^= windows.ENABLE_WINDOW_INPUT
-	mode &^= windows.ENABLE_PROCESSED_INPUT
+	mode &^= winterm.ENABLE_ECHO_INPUT
+	mode &^= winterm.ENABLE_LINE_INPUT
+	mode &^= winterm.ENABLE_MOUSE_INPUT
+	mode &^= winterm.ENABLE_WINDOW_INPUT
+	mode &^= winterm.ENABLE_PROCESSED_INPUT
 
 	// Enable these modes
-	mode |= windows.ENABLE_EXTENDED_FLAGS
-	mode |= windows.ENABLE_INSERT_MODE
-	mode |= windows.ENABLE_QUICK_EDIT_MODE
+	mode |= winterm.ENABLE_EXTENDED_FLAGS
+	mode |= winterm.ENABLE_INSERT_MODE
+	mode |= winterm.ENABLE_QUICK_EDIT_MODE
 
-	err = windows.SetConsoleMode(fd, mode)
+	err = winterm.SetConsoleMode(fd, mode)
 	if err != nil {
 		return nil, err
 	}
