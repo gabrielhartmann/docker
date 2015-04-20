@@ -46,6 +46,12 @@ func (aw *ansiWriter) Write(p []byte) (total int, err error) {
 		return 0, nil
 	}
 
+	// file, err = os.OpenFile("data.txt", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0x0666)
+	// if err == nil {
+	// 	defer file.Close()
+	// 	file.Write(p)
+	// }
+
 	// Iterate through the passed bytes converting ANSI commands and writing normal characters
 	sequenceStart := 0
 	for i, char := range p {
