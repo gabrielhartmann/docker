@@ -58,8 +58,10 @@ const (
 // -- http://man7.org/linux/man-pages/man4/console_codes.4.html
 // -- http://manpages.ubuntu.com/manpages/intrepid/man4/console_codes.4.html
 // -- http://en.wikipedia.org/wiki/ANSI_escape_code
+// -- http://vt100.net/emu/dec_ansi_parser
 // -- http://vt100.net/emu/vt500_parser.svg
 // -- http://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+// -- http://www.inwap.com/pdp10/ansicode.txt
 const (
 	// ECMA-48 Set Graphics Rendition
 	// Note:
